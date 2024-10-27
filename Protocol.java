@@ -1,13 +1,11 @@
 /*
  * Replace the following string of 0s with your student number
- * 000000000
+ * 230408180
  */
 
-import java.io.ByteArrayOutputStream;
-import java.io.File;
-import java.io.IOException;
-import java.io.ObjectOutputStream;
+import java.io.*;
 import java.net.*;
+import java.util.Arrays;
 
 public class Protocol {
 
@@ -71,9 +69,8 @@ public class Protocol {
      * This method does not set any of the attributes of the protocol.
      */
     public void sendMetadata() throws IOException {
-        System.out.println ("----------------------------------------------------");
+        System.out.println("----------------------------------------------------");
         System.out.println("Assembling and sending Meta Data");
-        System.out.println ("----------------------------------------------------");
         //creates an instance of the meta data class
         MetaData MetaDataToSend = new MetaData();
         //sets the values of the metadata
@@ -88,17 +85,10 @@ public class Protocol {
         byte[] data = outputStream.toByteArray();
         DatagramPacket sentpacket = new DatagramPacket(data, data.length, ipAddress, portNumber);
 
-        //creates the socket to send the data
-        try {
-            DatagramSocket ServerSocket = new DatagramSocket();
-        } catch (SocketException e) {
-            System.out.println("socket could not be created or could not bind to port" + portNumber);
-            e.printStackTrace();
-        }
-        ServerSocket.send(sentpacket);
-        System.out.println ("----------------------------------------------------");
+        this.socket.send(sentpacket);
+        System.out.println("----------------------------------------------------");
         System.out.println("Meta data sent successfully");
-        System.out.println ("----------------------------------------------------");
+        System.out.println("----------------------------------------------------");
     }
 
     /*
@@ -111,9 +101,51 @@ public class Protocol {
      * set the checksum of the data segment.
      * The method returns -1 if this is the last data segment (no more data to be read) and 0 otherwise.
      */
-    public int readData() {
-        System.exit(0);
-        return 0;
+    public int readData() throws IOException {
+        //sets segment type to data
+        this.dataSeg.setType(SegmentType.Data);
+
+        //creates the file reader for the input file.
+        FileReader myReader = null;
+        try {
+            myReader = new FileReader(inputFileName);
+        } catch (IOException e){
+            System.out.println("File reader could not be initialized");
+            System.out.println(e.getMessage());
+            System.exit(0);
+        }
+
+        long startPoint = this.fileSize - this.remainingBytes;
+        System.out.println("Creating segment...");
+        System.out.println("----------------------------------------------------");
+
+        //reads the input file and changes the segments values
+        if (this.remainingBytes < this.maxPayload) {
+            char[] segCharsBuf = new char[(int) this.remainingBytes];
+            myReader.read(segCharsBuf, (int)startPoint,(int)this.remainingBytes);
+            this.dataSeg.setSize((int)remainingBytes);
+            this.dataSeg.setPayLoad(Arrays.toString(segCharsBuf));
+            this.dataSeg.setSq(((int)this.fileSize - (int)this.remainingBytes) / this.maxPayload);
+            System.out.println("Segment number " + this.dataSeg.getSq() +" created (" + this.dataSeg.getSize() + " Bytes)");
+            System.out.println("----------------------------------------------------");
+            return  -1;
+
+        } else if (remainingBytes <= 0) {
+            System.out.println("No more Bytes to compile into segments");
+            System.out.println("----------------------------------------------------");
+            return  -1;
+
+        } else {
+            char[] segCharsBuf = new char[this.maxPayload];#
+            //THIS DOESNT WORK FIX IT START POINT IS THE OFFSET TO STORE IN cHARBUFFER
+            myReader.read(segCharsBuf, (int)startPoint, this.maxPayload);
+            this.dataSeg.setSize(this.maxPayload);
+            this.dataSeg.setPayLoad(Arrays.toString(segCharsBuf));
+            this.dataSeg.setSq(((int)this.fileSize - (int)this.remainingBytes) / this.maxPayload);
+            System.out.println("Segment number " + this.dataSeg.getSq() +" created (" + this.dataSeg.getSize() + " Bytes)");
+            System.out.println("----------------------------------------------------");
+            return 0;
+        }
     }
 
     /*
@@ -122,8 +154,24 @@ public class Protocol {
      * 		computes a checksum of the data and sets the data segment's checksum prior to sending.
      * output relevant information messages for the user to follow progress of the file transfer.
      */
-    public void sendData()  {
-        System.exit(0);
+    public void sendData() throws IOException {
+        //calculates the packets checksum
+        this.dataSeg.setChecksum(checksum(this.dataSeg.getPayLoad(),false));
+
+        //creates the data pack to send to the user
+        ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+        ObjectOutputStream objectStream = new ObjectOutputStream(outputStream);
+        objectStream.writeObject(this.dataSeg);
+        byte[] data = outputStream.toByteArray();
+        DatagramPacket dataPacket = new DatagramPacket(data, data.length, ipAddress, portNumber);
+
+        //sends data packet
+        this.socket.send(dataPacket);
+        this.totalSegments++;
+        this.remainingBytes = remainingBytes - dataSeg.getSize();
+        this.sentBytes = this.sentBytes + dataSeg.getSize();
+        System.out.println("Data segment sent Total: " + this.totalSegments + " Segments sent --- " + this.sentBytes + " Bytes sent");
+        System.out.println("----------------------------------------------------");
     }
 
 
@@ -142,8 +190,13 @@ public class Protocol {
      * output relevant information messages for the user to follow progress of the file transfer.
      */
     public boolean receiveAck(int expectedDataSq)  {
-        System.exit(0);
-        return false;
+        if (this.dataSeg.getSq() != expectedDataSq) {
+            System.out.println("Acknowledgment sequence number " + expectedDataSq + " does not match current segment sequence number " + this.dataSeg.getSq());
+            return false;
+        } else {
+            System.out.println("Acknowledgment sequence number " + expectedDataSq + " matches current sequence number " + this.dataSeg.getSq());
+            return true;
+        }
     }
 
     /*
