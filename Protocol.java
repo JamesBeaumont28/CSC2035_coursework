@@ -3,12 +3,11 @@
  * 000000000
  */
 
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
-import java.net.DatagramSocket;
-import java.net.InetAddress;
-import java.net.SocketException;
-import java.net.UnknownHostException;
+import java.io.ObjectOutputStream;
+import java.net.*;
 
 public class Protocol {
 
@@ -71,8 +70,35 @@ public class Protocol {
      * output relevant information messages for the user to follow progress of the file transfer.
      * This method does not set any of the attributes of the protocol.
      */
-    public void sendMetadata() {
-        System.exit(0);
+    public void sendMetadata() throws IOException {
+        System.out.println ("----------------------------------------------------");
+        System.out.println("Assembling and sending Meta Data");
+        System.out.println ("----------------------------------------------------");
+        //creates an instance of the meta data class
+        MetaData MetaDataToSend = new MetaData();
+        //sets the values of the metadata
+        MetaDataToSend.setName(inputFileName);
+        MetaDataToSend.setSize(fileSize);
+        MetaDataToSend.setMaxSegSize(maxPayload);
+
+        //creates the data pack to send to the user
+        ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+        ObjectOutputStream objectStream = new ObjectOutputStream(outputStream);
+        objectStream.writeObject(MetaDataToSend);
+        byte[] data = outputStream.toByteArray();
+        DatagramPacket sentpacket = new DatagramPacket(data, data.length, ipAddress, portNumber);
+
+        //creates the socket to send the data
+        try {
+            DatagramSocket ServerSocket = new DatagramSocket();
+        } catch (SocketException e) {
+            System.out.println("socket could not be created or could not bind to port" + portNumber);
+            e.printStackTrace();
+        }
+        ServerSocket.send(sentpacket);
+        System.out.println ("----------------------------------------------------");
+        System.out.println("Meta data sent successfully");
+        System.out.println ("----------------------------------------------------");
     }
 
     /*
