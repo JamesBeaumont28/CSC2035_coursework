@@ -122,7 +122,8 @@ public class Protocol {
         //reads the input file and changes the segments values
         if (this.remainingBytes < this.maxPayload) {
             char[] segCharsBuf = new char[(int) this.remainingBytes];
-            myReader.read(segCharsBuf, (int)startPoint,(int)this.remainingBytes);
+            myReader.skip(startPoint);
+            myReader.read(segCharsBuf,0,(int)this.remainingBytes);
             this.dataSeg.setSize((int)remainingBytes);
             this.dataSeg.setPayLoad(Arrays.toString(segCharsBuf));
             this.dataSeg.setSq(((int)this.fileSize - (int)this.remainingBytes) / this.maxPayload);
@@ -136,9 +137,9 @@ public class Protocol {
             return  -1;
 
         } else {
-            char[] segCharsBuf = new char[this.maxPayload];#
-            //THIS DOESNT WORK FIX IT START POINT IS THE OFFSET TO STORE IN cHARBUFFER
-            myReader.read(segCharsBuf, (int)startPoint, this.maxPayload);
+            char[] segCharsBuf = new char[this.maxPayload];
+            myReader.skip(startPoint);
+            myReader.read(segCharsBuf,0, this.maxPayload);
             this.dataSeg.setSize(this.maxPayload);
             this.dataSeg.setPayLoad(Arrays.toString(segCharsBuf));
             this.dataSeg.setSq(((int)this.fileSize - (int)this.remainingBytes) / this.maxPayload);
