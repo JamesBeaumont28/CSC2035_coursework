@@ -238,6 +238,7 @@ public class Protocol {
 
         } else {
             System.out.println("corrupting segment...");
+            //corrupts checksum
             this.dataSeg.setChecksum(checksum(this.dataSeg.getPayLoad(), isCorrupted(this.lossProb)));
 
             //creates the data pack to send to the user
@@ -272,21 +273,22 @@ public class Protocol {
      *
      * relevant methods that need to be used include: readData(), sendDataWithError(), receiveAck().
      */
-    void sendFileWithTimeout() throws IOException
-    {
+    void sendFileWithTimeout() throws IOException, InterruptedException {
+        //put send data in the while loop and run it untill the recAck returns true
+        //needs to run simoltainoiusly
+        boolean recived = false;
         while (this.remainingBytes!=0) {
+            recived = false;
             readData();
-            sendDataWithError();
-            try {
-                Thread.sleep(1000*this.timeout);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
-            if (!receiveAck(dataSeg.getSq())) {
-                System.out.println("Resending Segment...");
-                this.remainingBytes = this.remainingBytes + dataSeg.getSize();
+            //setInterval(sendDataWithError(), 1000);
+            //if recived = false send again in while loop
+            while (recived = false) {
+                recived = receiveAck(dataSeg.getSq());
+                break;
             }
         }
+
+
         System.out.println("Total Segments "+ this.totalSegments );
     }
     /*
