@@ -6,6 +6,7 @@
 import java.io.*;
 import java.net.*;
 import java.util.Arrays;
+import java.util.Timer;
 
 public class Protocol {
 
@@ -190,12 +191,32 @@ public class Protocol {
      * return true if no error
      * output relevant information messages for the user to follow progress of the file transfer.
      */
-    public boolean receiveAck(int expectedDataSq)  {
-        if (this.dataSeg.getSq() != expectedDataSq) {
-            System.out.println("Acknowledgment sequence number " + expectedDataSq + " does not match current segment sequence number " + this.dataSeg.getSq());
+    public boolean receiveAck(int expectedDataSq) {
+        byte[] incomingData = new byte[1024];
+        DatagramPacket incomingPacket = new DatagramPacket(incomingData, incomingData.length);
+        System.out.println("Receiving Acknowledgement...");
+        try{
+            socket.receive(incomingPacket);
+        } catch (IOException e) {
+            System.out.println("acknowledgement segment has not been received.");
+            return false;
+        }
+        byte[] data = incomingPacket.getData();
+        try {
+            ByteArrayInputStream in = new ByteArrayInputStream(data);
+            ObjectInputStream is = new ObjectInputStream(in);
+            ackSeg = (Segment) is.readObject();
+        } catch (ClassNotFoundException | IOException e) {
+            e.printStackTrace();
+        }
+        //checking if the sequence numbers match
+        if (this.ackSeg.getSq() != expectedDataSq) {
+            System.out.println("Acknowledgment sequence number " + expectedDataSq + " does not match current segment sequence number " + this.ackSeg.getSq());
+            System.out.println("Exiting...");
+            System.exit(0);
             return false;
         } else {
-            System.out.println("Acknowledgment sequence number " + expectedDataSq + " matches current sequence number " + this.dataSeg.getSq());
+            System.out.println("Acknowledgment sequence number " + expectedDataSq + " matches current sequence number " + this.ackSeg.getSq());
             return true;
         }
     }
@@ -210,7 +231,31 @@ public class Protocol {
      * output relevant information messages for the user to follow progress of the file transfer.
      */
     public void sendDataWithError() throws IOException {
-        System.exit(0);
+        if (this.resentSegments >= this.maxRetries) {
+            System.out.println("Maximum number of retires has been reached. Exiting....");
+            System.out.println("----------------------------------------------------");
+            System.exit(0);
+
+        } else {
+            System.out.println("corrupting segment...");
+            this.dataSeg.setChecksum(checksum(this.dataSeg.getPayLoad(), isCorrupted(this.lossProb)));
+
+            //creates the data pack to send to the user
+            ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+            ObjectOutputStream objectStream = new ObjectOutputStream(outputStream);
+            objectStream.writeObject(this.dataSeg);
+            byte[] data = outputStream.toByteArray();
+            DatagramPacket sentPacket = new DatagramPacket(data, data.length, ipAddress, portNumber);
+
+            //sends segment
+            this.socket.send(sentPacket);
+            System.out.println("Segment sent succesfully with " + this.lossProb + " probibility of corruption.");
+            System.out.println("----------------------------------------------------");
+            //updates relevant values
+            this.totalSegments++;
+            this.remainingBytes = remainingBytes - dataSeg.getSize();
+            this.sentBytes = this.sentBytes + dataSeg.getSize();
+        }
     }
 
     /*
@@ -229,7 +274,20 @@ public class Protocol {
      */
     void sendFileWithTimeout() throws IOException
     {
-        System.exit(0);
+        while (this.remainingBytes!=0) {
+            readData();
+            sendDataWithError();
+            try {
+                Thread.sleep(1000*this.timeout);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            if (!receiveAck(dataSeg.getSq())) {
+                System.out.println("Resending Segment...");
+                this.remainingBytes = this.remainingBytes + dataSeg.getSize();
+            }
+        }
+        System.out.println("Total Segments "+ this.totalSegments );
     }
     /*
      *  transfer the given file using the resources provided by the protocol structure using GoBackN.
