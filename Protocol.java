@@ -7,6 +7,7 @@ import java.io.*;
 import java.net.*;
 import java.util.Arrays;
 import java.util.Timer;
+import java.util.TimerTask;
 
 public class Protocol {
 
@@ -71,7 +72,7 @@ public class Protocol {
      */
     public void sendMetadata() throws IOException {
         System.out.println("----------------------------------------------------");
-        System.out.println("Assembling and sending Meta Data");
+        System.out.println("SENDER: Sending meta data");
         //creates an instance of the meta data class
         MetaData MetaDataToSend = new MetaData();
         //sets the values of the metadata
@@ -87,8 +88,7 @@ public class Protocol {
         DatagramPacket sentpacket = new DatagramPacket(data, data.length, ipAddress, portNumber);
 
         this.socket.send(sentpacket);
-        System.out.println("----------------------------------------------------");
-        System.out.println("Meta data sent successfully");
+        System.out.println("SENDER: meta data is sent (" + MetaDataToSend.getName() + ", " + MetaDataToSend.getSize() + ", " + MetaDataToSend.getMaxSegSize() + ")");
         System.out.println("----------------------------------------------------");
     }
 
@@ -117,9 +117,6 @@ public class Protocol {
         }
 
         long startPoint = this.fileSize - this.remainingBytes;
-        System.out.println("Creating segment...");
-        System.out.println("----------------------------------------------------");
-
         //reads the input file and changes the segments values
         if (this.remainingBytes < this.maxPayload) {
             char[] segCharsBuf = new char[(int) this.remainingBytes];
@@ -128,13 +125,11 @@ public class Protocol {
             this.dataSeg.setSize((int)remainingBytes);
             this.dataSeg.setPayLoad(Arrays.toString(segCharsBuf));
             this.dataSeg.setSq(((int)this.fileSize - (int)this.remainingBytes) / this.maxPayload);
-            System.out.println("Segment number " + this.dataSeg.getSq() +" created (" + this.dataSeg.getSize() + " Bytes)");
-            System.out.println("----------------------------------------------------");
             return  -1;
 
         } else if (remainingBytes <= 0) {
-            System.out.println("No more Bytes to compile into segments");
-            System.out.println("----------------------------------------------------");
+            System.out.println("SENDER: All Bytes have already been read. | Exiting");
+            System.exit(0);
             return  -1;
 
         } else {
@@ -144,8 +139,6 @@ public class Protocol {
             this.dataSeg.setSize(this.maxPayload);
             this.dataSeg.setPayLoad(Arrays.toString(segCharsBuf));
             this.dataSeg.setSq(((int)this.fileSize - (int)this.remainingBytes) / this.maxPayload);
-            System.out.println("Segment number " + this.dataSeg.getSq() +" created (" + this.dataSeg.getSize() + " Bytes)");
-            System.out.println("----------------------------------------------------");
             return 0;
         }
     }
@@ -172,8 +165,7 @@ public class Protocol {
         this.totalSegments++;
         this.remainingBytes = remainingBytes - dataSeg.getSize();
         this.sentBytes = this.sentBytes + dataSeg.getSize();
-        System.out.println("Data segment sent Total: " + this.totalSegments + " Segments sent --- " + this.sentBytes + " Bytes sent");
-        System.out.println("----------------------------------------------------");
+        System.out.println("SENDER: Sending segment: sq:" + this.dataSeg.getSq() + ", size: " + this.dataSeg.getSize() + ", checksum: " + dataSeg.getChecksum() + ", content: (" + dataSeg.getPayLoad() + ")");
     }
 
 
@@ -194,11 +186,11 @@ public class Protocol {
     public boolean receiveAck(int expectedDataSq) {
         byte[] incomingData = new byte[1024];
         DatagramPacket incomingPacket = new DatagramPacket(incomingData, incomingData.length);
-        System.out.println("Receiving Acknowledgement...");
         try{
             socket.receive(incomingPacket);
         } catch (IOException e) {
-            System.out.println("acknowledgement segment has not been received.");
+            System.out.println("SENDER: Acknowledgment not received");
+            System.out.println("----------------------------------------------------");
             return false;
         }
         byte[] data = incomingPacket.getData();
@@ -211,12 +203,13 @@ public class Protocol {
         }
         //checking if the sequence numbers match
         if (this.ackSeg.getSq() != expectedDataSq) {
-            System.out.println("Acknowledgment sequence number " + expectedDataSq + " does not match current segment sequence number " + this.ackSeg.getSq());
-            System.out.println("Exiting...");
+            System.out.println("SENDER: Acknowledgment does not match expected Sq: " + expectedDataSq + "| Exiting.");
+            System.out.println("----------------------------------------------------");
             System.exit(0);
             return false;
         } else {
-            System.out.println("Acknowledgment sequence number " + expectedDataSq + " matches current sequence number " + this.ackSeg.getSq());
+            System.out.println("SENDER: ACK sq=" + ackSeg.getSq() + " RECEIVED.");
+            System.out.println("----------------------------------------------------");
             return true;
         }
     }
@@ -232,12 +225,11 @@ public class Protocol {
      */
     public void sendDataWithError() throws IOException {
         if (this.resentSegments >= this.maxRetries) {
-            System.out.println("Maximum number of retires has been reached. Exiting....");
+            System.out.println("SENDER: Maximum number of retires has been reached | Exiting....");
             System.out.println("----------------------------------------------------");
             System.exit(0);
 
         } else {
-            System.out.println("corrupting segment...");
             //corrupts checksum
             this.dataSeg.setChecksum(checksum(this.dataSeg.getPayLoad(), isCorrupted(this.lossProb)));
 
@@ -250,12 +242,13 @@ public class Protocol {
 
             //sends segment
             this.socket.send(sentPacket);
-            System.out.println("Segment sent succesfully with " + this.lossProb + " probibility of corruption.");
+            System.out.println("SENDER: Sending segment: sq:" + this.dataSeg.getSq() + ", size: " + this.dataSeg.getSize() + ", checksum: " + dataSeg.getChecksum() + ", content: (" + dataSeg.getPayLoad() + ")");
             System.out.println("----------------------------------------------------");
             //updates relevant values
             this.totalSegments++;
             this.remainingBytes = remainingBytes - dataSeg.getSize();
             this.sentBytes = this.sentBytes + dataSeg.getSize();
+            this.currRetry++;
         }
     }
 
@@ -273,30 +266,66 @@ public class Protocol {
      *
      * relevant methods that need to be used include: readData(), sendDataWithError(), receiveAck().
      */
-    void sendFileWithTimeout() throws IOException, InterruptedException {
-        //put send data in the while loop and run it untill the recAck returns true
-        //needs to run simoltainoiusly
-        boolean recived = false;
-        while (this.remainingBytes!=0) {
-            recived = false;
+    void sendFileWithTimeout() throws IOException {
+        boolean received;
+
+        while (remainingBytes > 0)
+        {
             readData();
-            //setInterval(sendDataWithError(), 1000);
-            //if recived = false send again in while loop
-            while (recived = false) {
-                recived = receiveAck(dataSeg.getSq());
-                break;
+            received = false;
+            while (!received){
+                sendDataWithError();
+                this.socket.setSoTimeout(1000*this.timeout);
+                received = receiveAck(this.dataSeg.getSq());
+                if(!received) {
+                    System.out.println("SENDER: TIMEOUT ALERT: Re-sending the same segment again, current retry:" + this.currRetry);
+                    this.resentSegments++;
+                } else {
+                    this.currRetry = 0;
+                }
             }
         }
-
-
-        System.out.println("Total Segments "+ this.totalSegments );
+        System.out.println("Total Segments "+ this.totalSegments);
+        System.out.println("Resent Segments: " + this.resentSegments);
     }
+
     /*
      *  transfer the given file using the resources provided by the protocol structure using GoBackN.
      */
     void sendFileNormalGBN(int window) throws IOException
     {
-        System.exit(0);
+        int[] sqArray = new int[window];
+
+        //send the initial window of segments
+        System.out.println("---------------Sending the segments in the initial window --------------------------");
+        for (int i = 0; i < window; i++) {
+            readData();
+            sqArray[i] = dataSeg.getSq();
+            sendData();
+        }
+        System.out.println("SENDER: Waiting for an ack and slide the window if the ack number is correct");
+        System.out.println("-----------------------------------------------------------");
+        //receives most recent acknowledgment before sending next segment
+        while (remainingBytes > 0) {
+            System.out.println("SENDER: current outstanding Acks " + Arrays.toString(sqArray));
+            receiveAck(sqArray[0]);
+            System.out.println("SENDER: slide the window and send the next segment");
+            for (int i = (0); i < window-1; i++) {
+                sqArray[i] = sqArray[i+1];
+            }
+            System.out.println(Arrays.toString(sqArray));
+            readData();
+            sqArray[window-1] = dataSeg.getSq();
+            sendData();
+            System.out.println("-----------------------------------------------------------");
+        }
+        //receives the remaining acknowledgements
+        System.out.println("SENDER: current outstanding Acks");
+        System.out.println(Arrays.toString(sqArray));
+        for (int i = 0; i < window; i++) {
+            receiveAck(sqArray[i]);
+        }
+        System.out.println("Total Segments "+ this.totalSegments);
     }
 
     /*************************************************************************************************************************************
