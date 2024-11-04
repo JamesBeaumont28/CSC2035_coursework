@@ -1,13 +1,17 @@
 /*
  * Replace the following string of 0s with your student number
- * 230408180
+ * 000000000
  */
 
+import java.io.File;
+import java.io.IOException;
+import java.net.DatagramSocket;
+import java.net.InetAddress;
+import java.net.SocketException;
+import java.net.UnknownHostException;
 import java.io.*;
 import java.net.*;
 import java.util.Arrays;
-import java.util.Timer;
-import java.util.TimerTask;
 
 public class Protocol {
 
@@ -70,6 +74,7 @@ public class Protocol {
      * output relevant information messages for the user to follow progress of the file transfer.
      * This method does not set any of the attributes of the protocol.
      */
+
     public void sendMetadata() throws IOException {
         System.out.println("----------------------------------------------------");
         System.out.println("SENDER: Sending meta data");
@@ -87,6 +92,7 @@ public class Protocol {
         byte[] data = outputStream.toByteArray();
         DatagramPacket sentpacket = new DatagramPacket(data, data.length, ipAddress, portNumber);
 
+        //sends packet
         this.socket.send(sentpacket);
         System.out.println("SENDER: meta data is sent (" + MetaDataToSend.getName() + ", " + MetaDataToSend.getSize() + ", " + MetaDataToSend.getMaxSegSize() + ")");
         System.out.println("----------------------------------------------------");
@@ -102,45 +108,51 @@ public class Protocol {
      * set the checksum of the data segment.
      * The method returns -1 if this is the last data segment (no more data to be read) and 0 otherwise.
      */
-    public int readData() throws IOException {
+    public int readData() {
         //sets segment type to data
         this.dataSeg.setType(SegmentType.Data);
 
-        //creates the file reader for the input file.
-        FileReader myReader = null;
         try {
-            myReader = new FileReader(inputFileName);
-        } catch (IOException e){
-            System.out.println("File reader could not be initialized");
+            //creates the file reader and byte Array for the input file.
+            byte[] payloadByteStream = new byte[this.maxPayload];
+            FileInputStream myReader = new FileInputStream(this.inputFile);
+            myReader.skip((this.fileSize - this.remainingBytes));
+            int bytesRead = myReader.read(payloadByteStream,0,this.maxPayload);
+            myReader.close();
+
+            //checks if the reader read anything at all and exits if so
+            if (bytesRead == -1) {
+                System.out.println("SENDER: All Bytes have already been read. | Exiting");
+                System.exit(0);
+                return -1;
+            }
+
+            //sets all required values in dataSeg object
+            this.dataSeg.setSq(this.dataSeg.getSq() + 1);
+            this.dataSeg.setSize(bytesRead);
+            this.dataSeg.setSq(((int)this.fileSize - (int)this.remainingBytes) / this.maxPayload);
+            this.dataSeg.setPayLoad(new String(payloadByteStream,0,bytesRead));
+
+            //updates values
+            this.remainingBytes -= bytesRead;
+            this.sentBytes += bytesRead;
+            this.totalSegments++;
+
+            System.out.println(this.dataSeg.getPayLoad());
+            //checks if the final data segment has been read and returns -1 otherwise returns 0
+            if (bytesRead < maxPayload || this.remainingBytes == 0) {
+                return -1;
+            } else {
+                return 0;
+            }
+
+        } catch (IOException e) {
+            System.out.println("SENDER: Error during data read. | Exiting.");
             System.out.println(e.getMessage());
             System.exit(0);
+            return -1;
         }
 
-        long startPoint = this.fileSize - this.remainingBytes;
-        //reads the input file and changes the segments values
-        if (this.remainingBytes < this.maxPayload) {
-            char[] segCharsBuf = new char[(int) this.remainingBytes];
-            myReader.skip(startPoint);
-            myReader.read(segCharsBuf,0,(int)this.remainingBytes);
-            this.dataSeg.setSize((int)remainingBytes);
-            this.dataSeg.setPayLoad(Arrays.toString(segCharsBuf));
-            this.dataSeg.setSq(((int)this.fileSize - (int)this.remainingBytes) / this.maxPayload);
-            return  -1;
-
-        } else if (remainingBytes <= 0) {
-            System.out.println("SENDER: All Bytes have already been read. | Exiting");
-            System.exit(0);
-            return  -1;
-
-        } else {
-            char[] segCharsBuf = new char[this.maxPayload];
-            myReader.skip(startPoint);
-            myReader.read(segCharsBuf,0, this.maxPayload);
-            this.dataSeg.setSize(this.maxPayload);
-            this.dataSeg.setPayLoad(Arrays.toString(segCharsBuf));
-            this.dataSeg.setSq(((int)this.fileSize - (int)this.remainingBytes) / this.maxPayload);
-            return 0;
-        }
     }
 
     /*
@@ -327,6 +339,7 @@ public class Protocol {
         }
         System.out.println("Total Segments "+ this.totalSegments);
     }
+
 
     /*************************************************************************************************************************************
      **************************************************************************************************************************************
